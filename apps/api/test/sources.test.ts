@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HtmlReleaseNotesProvider, candidatesFromHtml } from "../src/sources.js";
+import { HtmlReleaseNotesProvider, candidatesFromHtml, candidatesFromOpenAiModelCatalog } from "../src/sources.js";
 
 describe("official model sources", () => {
   it("only emits dated sections that name a model or version", () => {
@@ -19,6 +19,26 @@ describe("official model sources", () => {
     `);
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.rawContent).toContain("Claude Opus 4.8");
+  });
+
+  it("uses each explicit model card from OpenAI's official model catalog", () => {
+    const collectedAt = "2026-07-23T08:00:00.000Z";
+    const candidates = candidatesFromOpenAiModelCatalog("https://developers.openai.com/api/docs/models", `
+      <main>
+        <p><a href="/api/docs/models/gpt-5.6-sol">GPT-5.6 Sol</a></p>
+        <a href="/api/docs/models/gpt-5.6-sol">GPT-5.6 Sol Frontier model Model ID gpt-5.6-sol Context window 1.05M Tools Functions, Computer use</a>
+        <a href="/api/docs/models/gpt-realtime-2.1">GPT-Realtime-2.1 Reasoning model with tool use</a>
+        <a href="https://example.com/gpt-5.6">Third-party copy</a>
+      </main>
+    `, collectedAt);
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toMatchObject({
+      sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+      sourceTitle: "OpenAI Model Catalog · gpt-5.6-sol",
+      publishedAt: collectedAt,
+    });
+    expect(candidates[0]?.rawContent).toContain("Context window 1.05M");
   });
 
   it("rejects a source outside the official allowlist", () => {

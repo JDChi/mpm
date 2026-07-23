@@ -16,4 +16,4 @@
 
 首轮仅处理每个来源最新 3 条模型相关记录，避免一次性为完整历史发布记录消耗模型额度；后续运行会依靠内容指纹自动去重。候选记录会先保存到 SQLite，再由 AI 分析任务领取；失败记录会在下次运行时重试。
 
-首版只允许 OpenAI Model Release Notes 与 Claude Platform Release Notes 两个第一方来源。页面仅收录明确关联模型或版本的发布、能力变更和弃用信息；ChatGPT/Claude App 界面更新与任何第三方来源都会被忽略。
+首版只允许 OpenAI Model Catalog 与 Claude Platform Release Notes 两个第一方来源。OpenAI 以官方目录中拆分的单个模型卡片为采集单位，页面仅收录明确关联模型或版本的发布、能力变更和弃用信息；ChatGPT/Claude App 界面更新与任何第三方来源都会被忽略。
