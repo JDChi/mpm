@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HtmlReleaseNotesProvider, candidatesFromHtml, candidatesFromOpenAiModelCatalog } from "../src/sources.js";
+import { HtmlReleaseNotesProvider, candidateFromOpenAiModelGuide, candidatesFromHtml, openAiModelGuideTabsFromHtml } from "../src/sources.js";
 
 describe("official model sources", () => {
   it("only emits dated sections that name a model or version", () => {
@@ -21,24 +21,30 @@ describe("official model sources", () => {
     expect(candidates[0]?.rawContent).toContain("Claude Opus 4.8");
   });
 
-  it("uses each explicit model card from OpenAI's official model catalog", () => {
+  it("discovers the official Model guidance tabs instead of hard-coding model names", () => {
+    const tabs = openAiModelGuideTabsFromHtml(`
+      <button data-content-switcher-option data-value="gpt-5.6">GPT-5.6</button>
+      <button data-content-switcher-option data-value="gpt-5.3-codex">GPT-5.3 Codex</button>
+      <button data-content-switcher-option data-value="gpt-4.1">GPT-4.1</button>
+    `);
+    expect(tabs.map((tab) => tab.id)).toEqual([
+      "gpt-5.6", "gpt-5.3-codex", "gpt-4.1",
+    ]);
+  });
+
+  it("uses the official guide content for an explicitly selected model", () => {
     const collectedAt = "2026-07-23T08:00:00.000Z";
-    const candidates = candidatesFromOpenAiModelCatalog("https://developers.openai.com/api/docs/models", `
-      <main>
-        <p><a href="/api/docs/models/gpt-5.6-sol">GPT-5.6 Sol</a></p>
-        <a href="/api/docs/models/gpt-5.6-sol">GPT-5.6 Sol Frontier model Model ID gpt-5.6-sol Context window 1.05M Tools Functions, Computer use</a>
-        <a href="/api/docs/models/gpt-realtime-2.1">GPT-Realtime-2.1 Reasoning model with tool use</a>
-        <a href="https://example.com/gpt-5.6">Third-party copy</a>
-      </main>
+    const candidate = candidateFromOpenAiModelGuide("gpt-5.5", "GPT-5.5", "https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.5", `
+      <main><h1>Model guidance</h1><h2>Using GPT-5.5</h2><h2>What's new</h2><p>More efficient reasoning and stronger tool use.</p></main>
     `, collectedAt);
 
-    expect(candidates).toHaveLength(2);
-    expect(candidates[0]).toMatchObject({
-      sourceUrl: "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
-      sourceTitle: "OpenAI Model Catalog · gpt-5.6-sol",
+    expect(candidate).toMatchObject({
+      sourceUrl: "https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.5",
+      sourceTitle: "OpenAI Model Guidance · GPT-5.5",
       publishedAt: collectedAt,
     });
-    expect(candidates[0]?.rawContent).toContain("Context window 1.05M");
+    expect(candidate.rawContent).toContain("What's new");
+    expect(candidate.rawContent).not.toContain("GPT-4o mini TTS");
   });
 
   it("rejects a source outside the official allowlist", () => {

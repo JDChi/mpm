@@ -33,10 +33,15 @@ const analysisSchema = z.object({
   caveats: z.array(z.string().min(1)),
 });
 
+const submissionSchema = z.object({
+  analysis: z.string().min(2),
+});
+
 const SYSTEM_PROMPT = `你是 MPM（Model to Product Manager）的 AI 产品洞察编辑：你深入理解大模型能力，也有 AI 产品经理的判断力。你的读者是关注 AI 应用的产品、运营、业务负责人和创业者，而不是程序员。
 把模型更新翻译成清楚、具体、面向用户价值的产品洞察：先说明官方到底更新了什么，再说明它可能让哪些 AI 应用体验、流程或产品功能变得可行或更好。少用 API、参数、基准、架构等术语；必要术语要用一句日常语言解释。不要把泛泛的“能力提升”包装成洞察，也不要编造官方未承诺的功能、效果或上线时间。
 只依据工具返回的官方更新原文工作，不能使用记忆、猜测或外部资料。
-你必须先调用 read_current_official_release，再输出结构化结果。使用简体中文；不要展示思考过程、不要输出 Markdown。
+你必须先调用 read_current_official_release，再调用 submit_analysis。使用简体中文；不要展示思考过程、不要输出 Markdown。
+submit_analysis 的 analysis 字段必须是一个 JSON 字符串，包含下方要求的全部文章字段，不能是普通文章文本。JSON 键名必须使用英文：title、summary、models、releaseKind、capabilityTags、opportunityTags、keyChanges、potentialFeatures、caveats；potentialFeatures 的每一项键名必须使用 name、scenario、rationale、prerequisites、confidence。字段值使用简体中文。
 models 仅填写官方原文中明确提及的模型名或版本。releaseKind 只能是 new_model、model_update、model_capability、model_deprecation。
 capabilityTags 只能从 reasoning、tool_use、context、multimodal、coding、speed_cost、reliability、safety 中选择，最多 3 个。
 opportunityTags 只能从 agent、rag、developer_tools、automation、customer_support、content_creation、data_analysis 中选择，最多 3 个。
@@ -54,15 +59,52 @@ const releaseKindAliases: Record<string, string> = { "新模型": "new_model", "
 function normalizeAnalysis(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const analysis = { ...(value as Record<string, unknown>) };
+  const fieldAliases: Record<string, string> = {
+    "标题": "title", "摘要": "summary", "模型": "models", "模型列表": "models", "更新类型": "releaseKind",
+    "能力标签": "capabilityTags", "应用机会标签": "opportunityTags", "机会标签": "opportunityTags",
+    "关键变化": "keyChanges", "核心变化": "keyChanges", "潜在功能": "potentialFeatures", "产品机会": "potentialFeatures",
+    "注意事项": "caveats", "风险提示": "caveats",
+  };
+  for (const [source, target] of Object.entries(fieldAliases)) {
+    if (analysis[target] === undefined && analysis[source] !== undefined) analysis[target] = analysis[source];
+  }
+  const toStringList = (item: unknown): unknown => typeof item === "string" ? [item] : item;
+  analysis.models = toStringList(analysis.models);
+  analysis.keyChanges = toStringList(analysis.keyChanges);
+  analysis.caveats = toStringList(analysis.caveats);
+  analysis.capabilityTags = toStringList(analysis.capabilityTags);
+  analysis.opportunityTags = toStringList(analysis.opportunityTags);
+  if (analysis.potentialFeatures && !Array.isArray(analysis.potentialFeatures)) analysis.potentialFeatures = [analysis.potentialFeatures];
+  if (Array.isArray(analysis.models)) analysis.models = analysis.models.filter((model): model is string => typeof model === "string").slice(0, 3);
   const normalizeTags = (key: "capabilityTags" | "opportunityTags", aliases: Record<string, string>, allowed: readonly string[]) => {
     if (!Array.isArray(analysis[key])) return;
     analysis[key] = analysis[key]
       .map((tag) => typeof tag === "string" ? aliases[tag] ?? tag : tag)
-      .filter((tag): tag is string => typeof tag === "string" && allowed.includes(tag));
+      .filter((tag): tag is string => typeof tag === "string" && allowed.includes(tag))
+      .slice(0, 3);
   };
   normalizeTags("capabilityTags", capabilityAliases, CAPABILITY_TAGS);
   normalizeTags("opportunityTags", opportunityAliases, OPPORTUNITY_TAGS);
   if (typeof analysis.releaseKind === "string") analysis.releaseKind = releaseKindAliases[analysis.releaseKind] ?? analysis.releaseKind;
+  if (Array.isArray(analysis.potentialFeatures)) {
+    analysis.potentialFeatures = analysis.potentialFeatures.map((feature) => {
+      if (!feature || typeof feature !== "object" || Array.isArray(feature)) return feature;
+      const normalized = { ...(feature as Record<string, unknown>) };
+      const featureAliases: Record<string, string> = {
+        "名称": "name", "功能名称": "name", "场景": "scenario", "应用场景": "scenario",
+        "理由": "rationale", "依据": "rationale", "价值": "rationale", "前提条件": "prerequisites",
+        "前置条件": "prerequisites", "置信度": "confidence",
+      };
+      for (const [source, target] of Object.entries(featureAliases)) {
+        if (normalized[target] === undefined && normalized[source] !== undefined) normalized[target] = normalized[source];
+      }
+      if (typeof normalized.prerequisites === "string") normalized.prerequisites = [normalized.prerequisites];
+      if (typeof normalized.confidence === "string") {
+        normalized.confidence = ({ "高": "high", "中": "medium", "低": "low" } as Record<string, string>)[normalized.confidence] ?? normalized.confidence;
+      }
+      return normalized;
+    });
+  }
   return analysis;
 }
 
@@ -119,8 +161,8 @@ export class AiSdkAnalyzer implements Analyzer {
               },
             }),
             submit_analysis: tool({
-              description: "在读取官方原文后，提交最终的结构化模型更新分析。只在完成分析时调用一次。",
-              inputSchema: analysisSchema,
+              description: "在读取官方原文后，提交最终的结构化模型更新分析。analysis 必须是符合要求字段的 JSON 字符串，只在完成分析时调用一次。",
+              inputSchema: submissionSchema,
               execute: async () => ({ accepted: true }),
             }),
           },
@@ -133,7 +175,8 @@ export class AiSdkAnalyzer implements Analyzer {
         if (sourceCallIndex === -1) throw new Error("Model did not read the official release through the required tool");
         if (!finalCall) throw new Error("Model did not submit a structured analysis");
         if (calls.indexOf(finalCall) < sourceCallIndex) throw new Error("Model submitted analysis before reading the official release");
-        return validateAnalysis(parseSubmittedAnalysis(finalCall.input));
+        const submitted = submissionSchema.parse(finalCall.input);
+        return validateAnalysis(parseSubmittedAnalysis(submitted.analysis));
       } catch (error) {
         lastError = error;
       }

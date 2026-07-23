@@ -21,6 +21,11 @@ export interface SourceProvider {
 const MODEL_UPDATE_PATTERN = /\b(?:gpt(?:[-\s]?\d+(?:\.\d+)?(?:[-\w.]*)?|[-\s]+[a-z]+(?:[-\d.]+)*)|o\d+(?:[-\w.]*)?|codex(?:[-\w.]*)?|claude[-\s]+(?:opus|sonnet|haiku|[a-z]+\s*\d+)(?:[-\w.]*)?)\b/i;
 const ALLOWED_SOURCE_HOSTS = new Set(["developers.openai.com", "help.openai.com", "platform.claude.com"]);
 
+export interface OpenAiModelGuideTab {
+  id: string;
+  label: string;
+}
+
 function normalize(input: string): string {
   return input.replace(/\s+/g, " ").trim();
 }
@@ -47,6 +52,17 @@ function assertAllowedSourceUrl(sourceUrl: string): void {
 
 function fingerprintFor(provider: ProviderId, sourceUrl: string, rawContent: string): string {
   return createHash("sha256").update(`${provider}|${sourceUrl}|${rawContent}`).digest("hex");
+}
+
+export function openAiModelGuideTabsFromHtml(html: string): OpenAiModelGuideTab[] {
+  const $ = cheerio.load(html);
+  const tabs = new Map<string, OpenAiModelGuideTab>();
+  for (const button of $("button[data-content-switcher-option][data-value]").toArray()) {
+    const id = $(button).attr("data-value")?.trim();
+    const label = normalize($(button).text());
+    if (id && label) tabs.set(id, { id, label });
+  }
+  return [...tabs.values()];
 }
 
 export function candidatesFromHtml(provider: ProviderId, label: string, sourceUrl: string, html: string): ReleaseCandidate[] {
@@ -81,68 +97,79 @@ export function candidatesFromHtml(provider: ProviderId, label: string, sourceUr
   return results;
 }
 
-/**
- * OpenAI's model catalog already separates each model into a dedicated card.
- * We use the official model ID as the unit of collection instead of guessing
- * which model a general changelog sentence might be referring to.
- */
-export function candidatesFromOpenAiModelCatalog(catalogUrl: string, html: string, collectedAt: string): ReleaseCandidate[] {
+export function candidateFromOpenAiModelGuide(
+  model: string,
+  label: string,
+  sourceUrl: string,
+  html: string,
+  collectedAt: string,
+): ReleaseCandidate {
   const $ = cheerio.load(html);
-  $("script, style, nav, footer").remove();
-  const entries = new Map<string, ReleaseCandidate>();
-
-  for (const anchor of $("a").toArray()) {
-    const href = $(anchor).attr("href");
-    if (!href || !/^\/api\/docs\/models\/[a-z0-9.-]+$/i.test(href)) continue;
-
-    const sourceUrl = new URL(href, catalogUrl).toString();
-    const modelId = href.split("/").at(-1)!;
-    const linkText = elementText($, anchor);
-    const parentText = elementText($, $(anchor).parent().get(0)!);
-    const parentHasOwnModelId = parentText.replace(/\s+/g, "").toLowerCase().includes(`modelid${modelId}`);
-    const cardText = parentHasOwnModelId ? parentText : linkText;
-    if (!cardText) continue;
-    const rawContent = `OpenAI Model Catalog\nModel ID: ${modelId}\n${cardText}`.slice(0, 12_000);
-    const candidate: ReleaseCandidate = {
-      provider: "openai",
-      sourceUrl,
-      sourceTitle: `OpenAI Model Catalog · ${modelId}`,
-      sourceExcerpt: rawContent.slice(0, 6_000),
-      rawContent,
-      // The catalog does not expose an official release date per card. This is
-      // the time MPM first observed this official catalog snapshot.
-      publishedAt: collectedAt,
-      fingerprint: fingerprintFor("openai", sourceUrl, rawContent),
-    };
-    const previous = entries.get(sourceUrl);
-    // The same model can appear in introductory copy and in its full card.
-    // Keep the richer occurrence while preserving catalog order.
-    if (!previous || candidate.rawContent.length > previous.rawContent.length) entries.set(sourceUrl, candidate);
-  }
-
-  return [...entries.values()];
+  $("script, style, nav, header, footer").remove();
+  const main = $("main").first().get(0);
+  if (!main) throw new Error(`OpenAI model guide has no main content: ${sourceUrl}`);
+  const guideContent = elementText($, main);
+  if (guideContent.length < 80) throw new Error(`OpenAI model guide has insufficient content: ${sourceUrl}`);
+  const rawContent = `OpenAI Model Guidance\nModel: ${label} (${model})\n${guideContent}`.slice(0, 12_000);
+  return {
+    provider: "openai",
+    sourceUrl,
+    sourceTitle: `OpenAI Model Guidance · ${label}`,
+    sourceExcerpt: rawContent.slice(0, 6_000),
+    rawContent,
+    // This guide has no per-section release timestamp. The date records when
+    // MPM first observed this official guide revision.
+    publishedAt: collectedAt,
+    fingerprint: fingerprintFor("openai", sourceUrl, rawContent),
+  };
 }
 
-export class OpenAiModelCatalogProvider implements SourceProvider {
-  readonly id = "openai" as const;
-  readonly label = "OpenAI Model Catalog";
-  readonly sourceUrl = "https://developers.openai.com/api/docs/models";
+async function mapWithConcurrency<T, R>(items: T[], maximum: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(maximum, items.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
 
-  constructor(private readonly maxItems = 3) {
+export class OpenAiModelGuidanceProvider implements SourceProvider {
+  readonly id = "openai" as const;
+  readonly label = "OpenAI Model Guidance";
+  readonly sourceUrl = "https://developers.openai.com/api/docs/guides/latest-model";
+
+  constructor() {
     assertAllowedSourceUrl(this.sourceUrl);
   }
 
   async fetchUpdates(): Promise<ReleaseCandidate[]> {
-    const response = await fetch(this.sourceUrl, {
+    const indexResponse = await fetch(this.sourceUrl, {
       headers: {
-        "User-Agent": "MPM/0.1 (+local development; official release-note monitor)",
+        "User-Agent": "MPM/0.1 (+local development; official model-guidance monitor)",
         Accept: "text/html,application/xhtml+xml",
       },
     });
-    if (!response.ok) throw new Error(`${this.label} source returned HTTP ${response.status}`);
-    const releases = candidatesFromOpenAiModelCatalog(this.sourceUrl, await response.text(), new Date().toISOString());
-    if (releases.length === 0) throw new Error(`${this.label} parser found no model cards`);
-    return releases.slice(0, this.maxItems);
+    if (!indexResponse.ok) throw new Error(`${this.label} source returned HTTP ${indexResponse.status}`);
+    const models = openAiModelGuideTabsFromHtml(await indexResponse.text());
+    if (models.length === 0) throw new Error(`${this.label} page exposed no model tabs`);
+    const collectedAt = new Date().toISOString();
+    return mapWithConcurrency(models, 4, async (model) => {
+      const sourceUrl = `${this.sourceUrl}?model=${encodeURIComponent(model.id)}`;
+      const response = await fetch(sourceUrl, {
+        headers: {
+          "User-Agent": "MPM/0.1 (+local development; official model-guidance monitor)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      });
+      if (!response.ok) throw new Error(`${this.label} ${model.label} returned HTTP ${response.status}`);
+      return candidateFromOpenAiModelGuide(model.id, model.label, sourceUrl, await response.text(), collectedAt);
+    });
   }
 }
 
@@ -173,7 +200,7 @@ export class HtmlReleaseNotesProvider implements SourceProvider {
 
 export function defaultSources(): SourceProvider[] {
   return [
-    new OpenAiModelCatalogProvider(),
+    new OpenAiModelGuidanceProvider(),
     new HtmlReleaseNotesProvider("anthropic", "Anthropic Platform Release Notes", "https://platform.claude.com/docs/en/release-notes/overview"),
   ];
 }
