@@ -62,6 +62,7 @@ export class RadarDatabase {
         analysis_attempts INTEGER NOT NULL DEFAULT 0,
         last_analysis_error TEXT,
         analysis_started_at TEXT,
+        source_order INTEGER NOT NULL DEFAULT 0,
         UNIQUE(provider, source_url, fingerprint)
       );
       CREATE TABLE IF NOT EXISTS articles (
@@ -91,6 +92,7 @@ export class RadarDatabase {
     this.ensureColumn("releases", "analysis_attempts", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("releases", "last_analysis_error", "TEXT");
     this.ensureColumn("releases", "analysis_started_at", "TEXT");
+    this.ensureColumn("releases", "source_order", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("articles", "models_json", "TEXT NOT NULL DEFAULT '[]'");
     this.ensureColumn("articles", "release_kind", "TEXT NOT NULL DEFAULT 'model_update'");
     this.ensureColumn("articles", "capability_tags_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -127,12 +129,19 @@ export class RadarDatabase {
 
   insertRelease(candidate: ReleaseCandidate): number | null {
     const result = this.sqlite.prepare(`INSERT OR IGNORE INTO releases
-      (provider, source_url, source_title, source_excerpt, raw_content, published_at, fingerprint, collected_at, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(
+      (provider, source_url, source_title, source_excerpt, raw_content, published_at, fingerprint, collected_at, source_order, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(
       candidate.provider, candidate.sourceUrl, candidate.sourceTitle, candidate.sourceExcerpt,
-      candidate.rawContent, candidate.publishedAt, candidate.fingerprint, new Date().toISOString(),
+      candidate.rawContent, candidate.publishedAt, candidate.fingerprint, new Date().toISOString(), candidate.sourceOrder ?? 0,
     );
     return result.changes === 1 ? Number(result.lastInsertRowid) : null;
+  }
+
+  syncReleaseSourceOrder(candidate: ReleaseCandidate): void {
+    this.sqlite.prepare(`UPDATE releases SET source_order = ?
+      WHERE provider = ? AND source_url = ? AND fingerprint = ?`).run(
+      candidate.sourceOrder ?? 0, candidate.provider, candidate.sourceUrl, candidate.fingerprint,
+    );
   }
 
   claimNextRelease(excludedIds: number[] = []): StoredRelease | null {
@@ -197,7 +206,7 @@ export class RadarDatabase {
     const rows = this.sqlite.prepare(`SELECT a.slug, a.title, a.summary, a.models_json, a.release_kind, a.capability_tags_json,
       a.opportunity_tags_json, a.created_at, r.provider, r.published_at, r.collected_at, r.source_url
       FROM articles a JOIN releases r ON a.release_id = r.id
-      ${filters.provider ? "WHERE r.provider = ?" : ""} ORDER BY r.published_at DESC, a.id DESC`)
+      ${filters.provider ? "WHERE r.provider = ?" : ""} ORDER BY r.published_at DESC, r.source_order ASC, a.id DESC`)
       .all(...(filters.provider ? [filters.provider] : [])) as Row[];
     return rows.map((row) => this.articleFromRow(row, false) as ArticleSummary).filter((article) =>
       (!filters.model || article.models.includes(filters.model))

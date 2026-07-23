@@ -9,6 +9,10 @@ export interface ReleaseCandidate {
   sourceExcerpt: string;
   rawContent: string;
   publishedAt: string;
+  // The official guidance page lists model tabs from newest to oldest, but
+  // does not expose a per-model publication date. Keep that source order as a
+  // stable tie-breaker without inventing a publication time.
+  sourceOrder?: number;
   fingerprint: string;
 }
 
@@ -103,6 +107,7 @@ export function candidateFromOpenAiModelGuide(
   sourceUrl: string,
   html: string,
   collectedAt: string,
+  sourceOrder = 0,
 ): ReleaseCandidate {
   const $ = cheerio.load(html);
   $("script, style, nav, header, footer").remove();
@@ -120,11 +125,12 @@ export function candidateFromOpenAiModelGuide(
     // This guide has no per-section release timestamp. The date records when
     // MPM first observed this official guide revision.
     publishedAt: collectedAt,
+    sourceOrder,
     fingerprint: fingerprintFor("openai", sourceUrl, rawContent),
   };
 }
 
-async function mapWithConcurrency<T, R>(items: T[], maximum: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+async function mapWithConcurrency<T, R>(items: T[], maximum: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const runners = Array.from({ length: Math.min(maximum, items.length) }, async () => {
@@ -132,7 +138,7 @@ async function mapWithConcurrency<T, R>(items: T[], maximum: number, worker: (it
       const index = next;
       next += 1;
       if (index >= items.length) return;
-      results[index] = await worker(items[index]!);
+      results[index] = await worker(items[index]!, index);
     }
   });
   await Promise.all(runners);
@@ -159,7 +165,7 @@ export class OpenAiModelGuidanceProvider implements SourceProvider {
     const models = openAiModelGuideTabsFromHtml(await indexResponse.text());
     if (models.length === 0) throw new Error(`${this.label} page exposed no model tabs`);
     const collectedAt = new Date().toISOString();
-    return mapWithConcurrency(models, 4, async (model) => {
+    return mapWithConcurrency(models, 4, async (model, sourceOrder) => {
       const sourceUrl = `${this.sourceUrl}?model=${encodeURIComponent(model.id)}`;
       const response = await fetch(sourceUrl, {
         headers: {
@@ -168,7 +174,7 @@ export class OpenAiModelGuidanceProvider implements SourceProvider {
         },
       });
       if (!response.ok) throw new Error(`${this.label} ${model.label} returned HTTP ${response.status}`);
-      return candidateFromOpenAiModelGuide(model.id, model.label, sourceUrl, await response.text(), collectedAt);
+      return candidateFromOpenAiModelGuide(model.id, model.label, sourceUrl, await response.text(), collectedAt, sourceOrder);
     });
   }
 }

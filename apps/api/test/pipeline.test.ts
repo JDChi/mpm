@@ -65,4 +65,22 @@ describe("collection pipeline", () => {
     expect(db.listArticles({ model: "GPT Example", capabilityTag: "context", opportunityTag: "rag" })).toHaveLength(1);
     expect(db.listArticles({ capabilityTag: "coding" })).toHaveLength(0);
   });
+
+  it("keeps the official tab order when observed timestamps are tied", async () => {
+    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "source-order.sqlite"));
+    const newest = makeCandidate({
+      provider: "openai", sourceUrl: "https://official.example/gpt-5.6", sourceTitle: "GPT-5.6",
+      sourceExcerpt: "GPT Example launched", rawContent: "GPT Example launched with a larger context window.",
+      publishedAt: "2026-07-01T12:00:00.000Z", sourceOrder: 0,
+    });
+    const older = makeCandidate({
+      provider: "openai", sourceUrl: "https://official.example/gpt-4.1", sourceTitle: "GPT-4.1",
+      sourceExcerpt: "GPT Example launched", rawContent: "GPT Example launched with a larger context window.",
+      publishedAt: "2026-07-01T12:00:00.000Z", sourceOrder: 1,
+    });
+    const source: SourceProvider = { id: "openai", label: "Official", fetchUpdates: async () => [newest, older] };
+    await runCollection(db, [source], { analyze: async () => analysis });
+
+    expect(db.listArticles().map((article) => article.sourceUrl)).toEqual([newest.sourceUrl, older.sourceUrl]);
+  });
 });

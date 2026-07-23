@@ -17,7 +17,10 @@ export async function runCollection(
     try {
       const candidates = await source.fetchUpdates();
       discoveredCount += candidates.length;
-      for (const candidate of candidates) database.insertRelease(candidate);
+      for (const candidate of candidates) {
+        database.insertRelease(candidate);
+        database.syncReleaseSourceOrder(candidate);
+      }
     } catch (error) {
       errors.push(`${source.label}: fetch failed — ${error instanceof Error ? error.message : "unknown error"}`);
     }

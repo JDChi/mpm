@@ -36,12 +36,13 @@ describe("official model sources", () => {
     const collectedAt = "2026-07-23T08:00:00.000Z";
     const candidate = candidateFromOpenAiModelGuide("gpt-5.5", "GPT-5.5", "https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.5", `
       <main><h1>Model guidance</h1><h2>Using GPT-5.5</h2><h2>What's new</h2><p>More efficient reasoning and stronger tool use.</p></main>
-    `, collectedAt);
+    `, collectedAt, 2);
 
     expect(candidate).toMatchObject({
       sourceUrl: "https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.5",
       sourceTitle: "OpenAI Model Guidance · GPT-5.5",
       publishedAt: collectedAt,
+      sourceOrder: 2,
     });
     expect(candidate.rawContent).toContain("What's new");
     expect(candidate.rawContent).not.toContain("GPT-4o mini TTS");
