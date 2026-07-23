@@ -22,7 +22,7 @@ function date(value: string): string {
 }
 
 function Header() {
-  return <header className="site-header"><a className="brand" href="#/">MODEL <em>RADAR</em></a><nav><a href="#/">更新</a><a href="#/admin">管理</a></nav></header>;
+  return <header className="site-header"><a className="brand" href="#/">MODEL <em>RADAR</em></a><nav><a href="#/">更新</a></nav></header>;
 }
 
 function ArticleCard({ article }: { article: ArticleSummary }) {
