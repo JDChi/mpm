@@ -9,7 +9,7 @@
     "test": "pnpm --filter @mpm/api test",
     "build:cf": "pnpm --filter @mpm/contracts build && pnpm --filter @mpm/web build && pnpm --filter @mpm/worker typecheck",
     "dev:cf": "pnpm --filter @mpm/worker dev",
-    "deploy:cf": "pnpm build:cf && pnpm --filter @mpm/worker run deploy"
+    "deploy:cf": "pnpm build:cf && pnpm --filter @mpm/worker exec wrangler d1 migrations apply mpm-production --remote && pnpm --filter @mpm/worker run deploy"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
