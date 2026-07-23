@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnalysisResult } from "@model-radar/contracts";
+import type { AnalysisResult } from "@mpm/contracts";
 import { RadarDatabase } from "../src/db.js";
 import { makeAnalysisForTest, validateAnalysis } from "../src/analyzer.js";
 import { runCollection } from "../src/pipeline.js";
@@ -37,7 +37,7 @@ describe("collection pipeline", () => {
   });
 
   it("publishes once and deduplicates repeated source content", async () => {
-    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "model-radar-")), "test.sqlite"));
+    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "test.sqlite"));
     const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };
     const analyzer = { analyze: async () => analysis };
     const first = await runCollection(db, [source], analyzer);
@@ -49,7 +49,7 @@ describe("collection pipeline", () => {
   });
 
   it("retries a previously stored release when its earlier analysis failed", async () => {
-    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "model-radar-")), "retry.sqlite"));
+    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "retry.sqlite"));
     const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };
     const failed = await runCollection(db, [source], { analyze: async () => { throw new Error("temporary failure"); } });
     const retried = await runCollection(db, [source], { analyze: async () => analysis });
@@ -59,7 +59,7 @@ describe("collection pipeline", () => {
   });
 
   it("only returns an article when all requested classifications match", async () => {
-    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "model-radar-")), "filters.sqlite"));
+    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "filters.sqlite"));
     const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };
     await runCollection(db, [source], { analyze: async () => analysis });
     expect(db.listArticles({ model: "GPT Example", capabilityTag: "context", opportunityTag: "rag" })).toHaveLength(1);

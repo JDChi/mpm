@@ -1,7 +1,7 @@
 import type { Analyzer } from "./analyzer.js";
 import type { RadarDatabase } from "./db.js";
 import type { SourceProvider } from "./sources.js";
-import type { RunSummary } from "@model-radar/contracts";
+import type { RunSummary } from "@mpm/contracts";
 
 export async function runCollection(
   database: RadarDatabase,

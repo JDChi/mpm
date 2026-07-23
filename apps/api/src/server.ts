@@ -16,5 +16,5 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.info(`Model Radar API listening on http://localhost:${info.port}`);
+  console.info(`MPM API listening on http://localhost:${info.port}`);
 });

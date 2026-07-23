@@ -1,4 +1,4 @@
-import type { ArticleDetail, ArticleSummary, RunSummary } from "@model-radar/contracts";
+import type { ArticleDetail, ArticleSummary, RunSummary } from "@mpm/contracts";
 
 const base = import.meta.env.VITE_API_BASE ?? "http://localhost:8787/api";
 

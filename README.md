@@ -1,6 +1,6 @@
-# Model Radar
+# MPM · Model to Product Manager
 
-中文模型更新雷达：每天抓取官方模型发布记录，并用 MiniMax 推演可能的 AI 应用功能机会。
+面向 AI 产品人的模型更新洞察站：持续追踪官方模型发布记录，提炼值得讨论的产品机会。
 
 ## 本地启动
 

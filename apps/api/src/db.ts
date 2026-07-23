@@ -10,7 +10,7 @@ import type {
   ProviderId,
   ReleaseKind,
   RunSummary,
-} from "@model-radar/contracts";
+} from "@mpm/contracts";
 import type { ReleaseCandidate } from "./sources.js";
 
 type Row = Record<string, unknown>;

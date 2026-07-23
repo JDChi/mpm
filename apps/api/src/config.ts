@@ -34,7 +34,7 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const minimaxApiKey = read("MINIMAX_API_KEY") ?? loadMmxApiKey();
   return {
     adminToken: read("ADMIN_TOKEN"),
-    databasePath: resolve(workspaceRoot, read("DATABASE_PATH") ?? "data/model-radar.sqlite"),
+    databasePath: resolve(workspaceRoot, read("DATABASE_PATH") ?? "data/mpm.sqlite"),
     minimaxApiKey,
     minimaxModel: read("MINIMAX_MODEL") ?? read("MMX_MODEL") ?? "MiniMax-M2.7-highspeed",
     port: Number(read("PORT") ?? 8787),

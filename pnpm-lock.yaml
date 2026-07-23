@@ -17,7 +17,7 @@ importers:
       '@hono/node-server':
         specifier: ^1.13.8
         version: 1.19.14(hono@4.12.31)
-      '@model-radar/contracts':
+      '@mpm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       ai:
@@ -54,7 +54,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@model-radar/contracts':
+      '@mpm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       react:

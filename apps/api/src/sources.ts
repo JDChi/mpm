@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as cheerio from "cheerio";
-import type { ProviderId } from "@model-radar/contracts";
+import type { ProviderId } from "@mpm/contracts";
 
 export interface ReleaseCandidate {
   provider: ProviderId;
@@ -78,7 +78,7 @@ export class HtmlReleaseNotesProvider implements SourceProvider {
   async fetchUpdates(): Promise<ReleaseCandidate[]> {
     const response = await fetch(this.sourceUrl, {
       headers: {
-        "User-Agent": "ModelRadar/0.1 (+local development; official release-note monitor)",
+        "User-Agent": "MPM/0.1 (+local development; official release-note monitor)",
         Accept: "text/html,application/xhtml+xml",
       },
     });
