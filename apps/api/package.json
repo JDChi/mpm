@@ -1,0 +1,28 @@
+{
+  "name": "@model-radar/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_USE_ENV_PROXY=1 tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "@model-radar/contracts": "workspace:*",
+    "ai": "^7.0.35",
+    "cheerio": "^1.0.0",
+    "hono": "^4.6.20",
+    "jsonrepair": "^3.12.0",
+    "vercel-minimax-ai-provider": "^0.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

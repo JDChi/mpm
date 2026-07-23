@@ -1,0 +1,14 @@
+{
+  "name": "model-radar",
+  "private": true,
+  "packageManager": "pnpm@10.4.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @model-radar/api dev",
+    "dev:web": "pnpm --filter @model-radar/web dev",
+    "build": "pnpm --filter @model-radar/contracts build && pnpm --filter @model-radar/api build && pnpm --filter @model-radar/web build",
+    "test": "pnpm --filter @model-radar/api test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
