@@ -12,24 +12,11 @@ import type {
   RunSummary,
 } from "@mpm/contracts";
 import type { ReleaseCandidate } from "./sources.js";
+import type { ArticleFilters, ReleaseRepository, ReleaseStatus, StoredRelease } from "./repository.js";
 
 type Row = Record<string, unknown>;
 
-export type ReleaseStatus = "pending" | "analyzing" | "published" | "retryable_failed";
-
-export interface StoredRelease extends ReleaseCandidate {
-  id: number;
-  status: ReleaseStatus;
-  analysisAttempts: number;
-  lastAnalysisError: string | null;
-}
-
-export interface ArticleFilters {
-  provider?: string;
-  model?: string;
-  capabilityTag?: string;
-  opportunityTag?: string;
-}
+export type { ArticleFilters, ReleaseRepository, ReleaseStatus, StoredRelease } from "./repository.js";
 
 function parseJsonArray<T extends string>(value: unknown): T[] {
   try {
@@ -40,7 +27,7 @@ function parseJsonArray<T extends string>(value: unknown): T[] {
   }
 }
 
-export class RadarDatabase {
+export class RadarDatabase implements ReleaseRepository {
   readonly sqlite: DatabaseSync;
 
   constructor(file: string) {
@@ -105,17 +92,17 @@ export class RadarDatabase {
     if (!columns.some((item) => item.name === column)) this.sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 
-  startRun(): number {
+  async startRun(): Promise<number> {
     const result = this.sqlite.prepare("INSERT INTO runs (status, started_at) VALUES ('running', ?)").run(new Date().toISOString());
     return Number(result.lastInsertRowid);
   }
 
-  finishRun(id: number, result: Omit<RunSummary, "id" | "startedAt" | "finishedAt">): void {
+  async finishRun(id: number, result: Omit<RunSummary, "id" | "startedAt" | "finishedAt">): Promise<void> {
     this.sqlite.prepare("UPDATE runs SET status = ?, finished_at = ?, discovered_count = ?, published_count = ?, error = ? WHERE id = ?")
       .run(result.status, new Date().toISOString(), result.discoveredCount, result.publishedCount, result.error, id);
   }
 
-  listRuns(): RunSummary[] {
+  async listRuns(): Promise<RunSummary[]> {
     return (this.sqlite.prepare("SELECT * FROM runs ORDER BY id DESC LIMIT 30").all() as Row[]).map((row) => ({
       id: Number(row.id),
       status: row.status as RunSummary["status"],
@@ -127,7 +114,7 @@ export class RadarDatabase {
     }));
   }
 
-  insertRelease(candidate: ReleaseCandidate): number | null {
+  async insertRelease(candidate: ReleaseCandidate): Promise<number | null> {
     const result = this.sqlite.prepare(`INSERT OR IGNORE INTO releases
       (provider, source_url, source_title, source_excerpt, raw_content, published_at, fingerprint, collected_at, source_order, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`).run(
@@ -137,14 +124,14 @@ export class RadarDatabase {
     return result.changes === 1 ? Number(result.lastInsertRowid) : null;
   }
 
-  syncReleaseSourceOrder(candidate: ReleaseCandidate): void {
+  async syncReleaseSourceOrder(candidate: ReleaseCandidate): Promise<void> {
     this.sqlite.prepare(`UPDATE releases SET source_order = ?
       WHERE provider = ? AND source_url = ? AND fingerprint = ?`).run(
       candidate.sourceOrder ?? 0, candidate.provider, candidate.sourceUrl, candidate.fingerprint,
     );
   }
 
-  claimNextRelease(excludedIds: number[] = []): StoredRelease | null {
+  async claimNextRelease(excludedIds: number[] = []): Promise<StoredRelease | null> {
     const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString();
     const exclusions = excludedIds.length ? `AND id NOT IN (${excludedIds.map(() => "?").join(", ")})` : "";
     const row = this.sqlite.prepare(`SELECT * FROM releases
@@ -161,7 +148,7 @@ export class RadarDatabase {
     return update.changes === 1 ? this.getRelease(Number(row.id)) : null;
   }
 
-  getRelease(id: number): StoredRelease | null {
+  async getRelease(id: number): Promise<StoredRelease | null> {
     const row = this.sqlite.prepare("SELECT * FROM releases WHERE id = ?").get(id) as Row | undefined;
     if (!row) return null;
     return {
@@ -172,12 +159,12 @@ export class RadarDatabase {
     };
   }
 
-  markReleaseRetryableFailed(id: number, error: string): void {
+  async markReleaseRetryableFailed(id: number, error: string): Promise<void> {
     this.sqlite.prepare("UPDATE releases SET status = 'retryable_failed', last_analysis_error = ?, analysis_started_at = NULL WHERE id = ?")
       .run(error.slice(0, 2_000), id);
   }
 
-  publishArticle(release: StoredRelease, analysis: AnalysisResult): ArticleDetail {
+  async publishArticle(release: StoredRelease, analysis: AnalysisResult): Promise<ArticleDetail> {
     const slug = `${release.provider}-${release.publishedAt.slice(0, 10)}-${release.fingerprint.slice(0, 10)}`;
     const createdAt = new Date().toISOString();
     this.sqlite.exec("BEGIN");
@@ -202,7 +189,7 @@ export class RadarDatabase {
     }, true) as ArticleDetail;
   }
 
-  listArticles(filters: ArticleFilters = {}): ArticleSummary[] {
+  async listArticles(filters: ArticleFilters = {}): Promise<ArticleSummary[]> {
     const rows = this.sqlite.prepare(`SELECT a.slug, a.title, a.summary, a.models_json, a.release_kind, a.capability_tags_json,
       a.opportunity_tags_json, a.created_at, r.provider, r.published_at, r.collected_at, r.source_url
       FROM articles a JOIN releases r ON a.release_id = r.id
@@ -215,7 +202,7 @@ export class RadarDatabase {
     );
   }
 
-  getArticle(slug: string): ArticleDetail | null {
+  async getArticle(slug: string): Promise<ArticleDetail | null> {
     const row = this.sqlite.prepare(`SELECT a.slug, a.title, a.summary, a.models_json, a.release_kind, a.capability_tags_json,
       a.opportunity_tags_json, a.analysis_json, a.created_at, r.provider, r.published_at, r.collected_at, r.source_url,
       r.source_title, r.source_excerpt FROM articles a JOIN releases r ON a.release_id = r.id WHERE a.slug = ?`).get(slug) as Row | undefined;

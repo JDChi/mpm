@@ -45,7 +45,7 @@ describe("collection pipeline", () => {
     expect(first.status).toBe("succeeded");
     expect(first.publishedCount).toBe(1);
     expect(second.publishedCount).toBe(0);
-    expect(db.listArticles()).toHaveLength(1);
+    expect(await db.listArticles()).toHaveLength(1);
   });
 
   it("retries a previously stored release when its earlier analysis failed", async () => {
@@ -55,15 +55,15 @@ describe("collection pipeline", () => {
     const retried = await runCollection(db, [source], { analyze: async () => analysis });
     expect(failed.publishedCount).toBe(0);
     expect(retried.publishedCount).toBe(1);
-    expect(db.listArticles()).toHaveLength(1);
+    expect(await db.listArticles()).toHaveLength(1);
   });
 
   it("only returns an article when all requested classifications match", async () => {
     const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "filters.sqlite"));
     const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };
     await runCollection(db, [source], { analyze: async () => analysis });
-    expect(db.listArticles({ model: "GPT Example", capabilityTag: "context", opportunityTag: "rag" })).toHaveLength(1);
-    expect(db.listArticles({ capabilityTag: "coding" })).toHaveLength(0);
+    expect(await db.listArticles({ model: "GPT Example", capabilityTag: "context", opportunityTag: "rag" })).toHaveLength(1);
+    expect(await db.listArticles({ capabilityTag: "coding" })).toHaveLength(0);
   });
 
   it("keeps the official tab order when observed timestamps are tied", async () => {
@@ -81,6 +81,6 @@ describe("collection pipeline", () => {
     const source: SourceProvider = { id: "openai", label: "Official", fetchUpdates: async () => [newest, older] };
     await runCollection(db, [source], { analyze: async () => analysis });
 
-    expect(db.listArticles().map((article) => article.sourceUrl)).toEqual([newest.sourceUrl, older.sourceUrl]);
+    expect((await db.listArticles()).map((article) => article.sourceUrl)).toEqual([newest.sourceUrl, older.sourceUrl]);
   });
 });

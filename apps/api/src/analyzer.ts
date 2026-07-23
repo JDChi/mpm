@@ -9,7 +9,7 @@ import {
   type AnalysisResult,
   type PotentialFeature,
 } from "@mpm/contracts";
-import type { RadarDatabase } from "./db.js";
+import type { ReleaseRepository } from "./repository.js";
 
 export interface Analyzer {
   analyze(releaseId: number): Promise<AnalysisResult>;
@@ -125,7 +125,7 @@ export class AiSdkAnalyzer implements Analyzer {
   private readonly provider;
 
   constructor(
-    private readonly database: RadarDatabase,
+    private readonly database: ReleaseRepository,
     private readonly model: string,
     apiKey: string,
   ) {
@@ -149,7 +149,7 @@ export class AiSdkAnalyzer implements Analyzer {
               description: "读取当前已领取的单条官方模型更新原文。必须先调用此工具，再做分析。",
               inputSchema: z.object({}),
               execute: async () => {
-                const release = this.database.getRelease(releaseId);
+                const release = await this.database.getRelease(releaseId);
                 if (!release) throw new Error("Current release was not found in the database");
                 if (release.status !== "analyzing") throw new Error("Current release is not claimed for analysis");
                 return {

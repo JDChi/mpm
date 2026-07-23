@@ -8,4 +8,5 @@ data/*.sqlite-*
 apps/api/data/
 apps/data/
 .wrangler/
+apps/worker/worker-configuration.d.ts
 coverage/

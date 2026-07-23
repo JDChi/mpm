@@ -1,6 +1,6 @@
 import type { ArticleDetail, ArticleSummary, RunSummary } from "@mpm/contracts";
 
-const base = import.meta.env.VITE_API_BASE ?? "http://localhost:8787/api";
+const base = import.meta.env.VITE_API_BASE ?? (import.meta.env.PROD ? "/api" : "http://localhost:8787/api");
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, options);

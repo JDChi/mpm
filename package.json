@@ -6,7 +6,10 @@
     "dev:api": "pnpm --filter @mpm/api dev",
     "dev:web": "pnpm --filter @mpm/web dev",
     "build": "pnpm --filter @mpm/contracts build && pnpm --filter @mpm/api build && pnpm --filter @mpm/web build",
-    "test": "pnpm --filter @mpm/api test"
+    "test": "pnpm --filter @mpm/api test",
+    "build:cf": "pnpm --filter @mpm/contracts build && pnpm --filter @mpm/web build && pnpm --filter @mpm/worker typecheck",
+    "dev:cf": "pnpm --filter @mpm/worker dev",
+    "deploy:cf": "pnpm build:cf && pnpm --filter @mpm/worker run deploy"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

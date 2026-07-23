@@ -1,14 +1,14 @@
 import type { Analyzer } from "./analyzer.js";
-import type { RadarDatabase } from "./db.js";
+import type { ReleaseRepository } from "./repository.js";
 import type { SourceProvider } from "./sources.js";
 import type { RunSummary } from "@mpm/contracts";
 
 export async function runCollection(
-  database: RadarDatabase,
+  database: ReleaseRepository,
   sources: SourceProvider[],
   analyzer: Analyzer,
 ): Promise<RunSummary> {
-  const id = database.startRun();
+  const id = await database.startRun();
   let discoveredCount = 0;
   let publishedCount = 0;
   const errors: string[] = [];
@@ -18,8 +18,8 @@ export async function runCollection(
       const candidates = await source.fetchUpdates();
       discoveredCount += candidates.length;
       for (const candidate of candidates) {
-        database.insertRelease(candidate);
-        database.syncReleaseSourceOrder(candidate);
+        await database.insertRelease(candidate);
+        await database.syncReleaseSourceOrder(candidate);
       }
     } catch (error) {
       errors.push(`${source.label}: fetch failed — ${error instanceof Error ? error.message : "unknown error"}`);
@@ -28,16 +28,16 @@ export async function runCollection(
 
   const attemptedReleaseIds = new Set<number>();
   for (;;) {
-    const release = database.claimNextRelease([...attemptedReleaseIds]);
+    const release = await database.claimNextRelease([...attemptedReleaseIds]);
     if (!release) break;
     attemptedReleaseIds.add(release.id);
     try {
       const analysis = await analyzer.analyze(release.id);
-      database.publishArticle(release, analysis);
+      await database.publishArticle(release, analysis);
       publishedCount += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
-      database.markReleaseRetryableFailed(release.id, message);
+      await database.markReleaseRetryableFailed(release.id, message);
       errors.push(`release #${release.id}: analysis failed — ${message}`);
     }
   }
@@ -48,6 +48,6 @@ export async function runCollection(
     publishedCount,
     error: errors.length ? errors.join("\n").slice(0, 3_000) : null,
   };
-  database.finishRun(id, result);
-  return database.listRuns().find((run) => run.id === id)!;
+  await database.finishRun(id, result);
+  return (await database.listRuns()).find((run) => run.id === id)!;
 }
