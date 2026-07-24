@@ -39,16 +39,29 @@ function Home() {
   const [provider, setProvider] = useState("all");
   const [model, setModel] = useState("all");
   const [error, setError] = useState("");
-  const models = useMemo(() => [...new Set(articles.flatMap((article) => article.models))].sort(), [articles]);
+  const models = useMemo(() => [...new Set(articles
+    .filter((article) => provider === "all" || article.provider === provider)
+    .flatMap((article) => article.models))].sort(), [articles, provider]);
   const displayed = useMemo(() => articles.filter((item) => (provider === "all" || item.provider === provider)
     && (model === "all" || item.models.includes(model))), [articles, provider, model]);
+  const selectProvider = (nextProvider: string) => {
+    setProvider(nextProvider);
+    setModel("all");
+  };
+  const selectModel = (nextModel: string) => {
+    setModel(nextModel);
+    if (nextModel === "all") return;
+    const modelOwner = articles.find((article) => article.models.includes(nextModel))?.provider;
+    if (modelOwner) setProvider(modelOwner);
+  };
+  const modelLabel = provider === "all" ? "模型" : `${providerLabels[provider] ?? provider} 模型`;
   useEffect(() => {
     listArticles().then(setArticles).catch((err: Error) => setError(err.message));
     listProviders().then(setProviders).catch(() => undefined);
   }, []);
   return <main>
     <section className="hero"><p className="kicker">MPM · MODEL TO PRODUCT MANAGER</p><h1>把模型变化，<br /><i>变成产品判断。</i></h1><p>追踪官方模型更新，翻译成用户体验、产品策略与 AI 应用机会。事实来自原文，判断保留边界。</p></section>
-    <section className="feed"><div className="feed-top"><h2>最新更新</h2><div className="filters">{[{ id: "all", label: "全部" }, ...providers].map((item) => <button className={provider === item.id ? "active" : ""} onClick={() => setProvider(item.id)} key={item.id}>{item.label}</button>)}</div></div><div className="select-filters"><label>模型<select value={model} onChange={(event) => setModel(event.target.value)}><option value="all">全部模型</option>{models.map((item) => <option key={item}>{item}</option>)}</select></label></div>
+    <section className="feed"><div className="feed-top"><h2>最新更新</h2><div className="filters">{[{ id: "all", label: "全部" }, ...providers].map((item) => <button className={provider === item.id ? "active" : ""} onClick={() => selectProvider(item.id)} key={item.id}>{item.label}</button>)}</div></div><div className="select-filters"><label>{modelLabel}<select value={model} onChange={(event) => selectModel(event.target.value)}><option value="all">{provider === "all" ? "全部模型" : `全部 ${providerLabels[provider] ?? provider} 模型`}</option>{models.map((item) => <option key={item}>{item}</option>)}</select></label></div>
       {error && <p className="error">{error}</p>}
       {!error && displayed.length === 0 && <div className="empty"><strong>还没有文章。</strong><span>到「管理」页运行首次抓取，模型更新会在通过校验后自动公开。</span></div>}
       <div className="grid">{displayed.map((article) => <ArticleCard key={article.slug} article={article} />)}</div>
