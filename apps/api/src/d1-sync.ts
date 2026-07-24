@@ -11,13 +11,15 @@ function releaseIdentity(record: PublishedReleaseForSync): string {
 }
 
 /**
- * Builds a single, retry-safe D1 import. Existing releases and articles are
- * never overwritten; the final update only makes sure an imported article's
- * release is not left pending for the production Workflow to analyze again.
+ * Builds a retry-safe D1 import. Existing releases and articles are never
+ * overwritten; the final update only makes sure an imported article's release
+ * is not left pending for the production Workflow to analyze again. Wrangler's
+ * remote D1 file executor owns the transaction, so this must not emit BEGIN or
+ * COMMIT statements.
  */
 export function renderD1SyncSql(records: PublishedReleaseForSync[]): string {
   if (records.length === 0) return "";
-  const statements = ["BEGIN;"];
+  const statements: string[] = [];
 
   for (const record of records) {
     const { release, article } = record;
@@ -36,7 +38,6 @@ export function renderD1SyncSql(records: PublishedReleaseForSync[]): string {
       WHERE ${releaseIdentity(record)} AND EXISTS (SELECT 1 FROM articles WHERE articles.release_id = releases.id);`);
   }
 
-  statements.push("COMMIT;");
   return `${statements.join("\n")}\n`;
 }
 

@@ -18,12 +18,11 @@ const record: PublishedReleaseForSync = {
 describe("D1 bootstrap SQL", () => {
   it("is idempotent and escapes official content safely", () => {
     const sql = renderD1SyncSql([record]);
-    expect(sql).toContain("BEGIN;");
     expect(sql).toContain("INSERT OR IGNORE INTO releases");
     expect(sql).toContain("INSERT OR IGNORE INTO articles");
     expect(sql).toContain("K3''s official notes");
     expect(sql).toContain("status = 'published'");
-    expect(sql).toContain("COMMIT;");
+    expect(sql).not.toMatch(/\b(?:BEGIN|COMMIT)\b/);
   });
 
   it("uses a provider-only remote verification query", () => {
