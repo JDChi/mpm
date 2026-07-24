@@ -61,12 +61,14 @@ export class D1RadarDatabase implements ReleaseRepository {
     ).run();
   }
 
-  async claimNextRelease(excludedIds: number[] = []): Promise<StoredRelease | null> {
+  async claimNextRelease(excludedIds: number[] = [], provider?: string): Promise<StoredRelease | null> {
     const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString();
+    const providerFilter = provider ? "AND provider = ?" : "";
     const exclusions = excludedIds.length ? `AND id NOT IN (${excludedIds.map(() => "?").join(", ")})` : "";
     const row = await this.database.prepare(`SELECT * FROM releases
       WHERE (status IN ('pending', 'retryable_failed') OR (status = 'analyzing' AND analysis_started_at < ?))
-      ${exclusions} ORDER BY published_at ASC, id ASC LIMIT 1`).bind(staleBefore, ...excludedIds).first<Row>();
+      ${providerFilter} ${exclusions} ORDER BY published_at ASC, id ASC LIMIT 1`)
+      .bind(staleBefore, ...(provider ? [provider] : []), ...excludedIds).first<Row>();
     if (!row) return null;
     const result = await this.database.prepare(`UPDATE releases SET status = 'analyzing', analysis_attempts = analysis_attempts + 1,
       analysis_started_at = ?, last_analysis_error = NULL

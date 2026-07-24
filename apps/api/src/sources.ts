@@ -19,11 +19,20 @@ export interface ReleaseCandidate {
 export interface SourceProvider {
   id: ProviderId;
   label: string;
+  displayLabel?: string;
   fetchUpdates(): Promise<ReleaseCandidate[]>;
 }
 
 const MODEL_UPDATE_PATTERN = /\b(?:gpt(?:[-\s]?\d+(?:\.\d+)?(?:[-\w.]*)?|[-\s]+[a-z]+(?:[-\d.]+)*)|o\d+(?:[-\w.]*)?|codex(?:[-\w.]*)?|claude[-\s]+(?:opus|sonnet|haiku|[a-z]+\s*\d+)(?:[-\w.]*)?)\b/i;
-const ALLOWED_SOURCE_HOSTS = new Set(["developers.openai.com", "help.openai.com", "platform.claude.com"]);
+const KIMI_MODEL_PATTERN = /\b(?:kimi[-\s]?k\d+(?:\.\d+)?(?:[-\s][a-z]+|[-\w.]*)?|k\d+(?:\.\d+)?(?:[-\w.]+)?)\b/i;
+const ZHIPU_MODEL_PATTERN = /\bglm-(?:\d+(?:\.\d+)?[a-z0-9.-]*|ocr|image|tts(?:-[\w.]+)?|asr(?:-[\w.]+)?|z\d+(?:-[\w.]+)?)\b/i;
+const ALLOWED_SOURCE_HOSTS = new Set([
+  "developers.openai.com",
+  "help.openai.com",
+  "platform.claude.com",
+  "platform.kimi.com",
+  "docs.bigmodel.cn",
+]);
 
 export interface OpenAiModelGuideTab {
   id: string;
@@ -43,10 +52,36 @@ function elementText($: cheerio.CheerioAPI, element: any): string {
 }
 
 function dateFromText(text: string): string | null {
+  const isoMatch = text.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) {
+    const date = new Date(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T12:00:00Z`);
+    return Number.isNaN(date.valueOf()) ? null : date.toISOString();
+  }
   const match = text.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/i);
   if (!match) return null;
   const date = new Date(`${match[0]} 12:00:00 UTC`);
   return Number.isNaN(date.valueOf()) ? null : date.toISOString();
+}
+
+function candidateFromReleaseContent(
+  provider: ProviderId,
+  label: string,
+  sourceUrl: string,
+  title: string,
+  rawContent: string,
+): ReleaseCandidate | null {
+  const publishedAt = dateFromText(rawContent);
+  if (!publishedAt) return null;
+  const content = rawContent.slice(0, 12_000);
+  return {
+    provider,
+    sourceUrl,
+    sourceTitle: `${label} · ${title}`,
+    sourceExcerpt: content.slice(0, 6_000),
+    rawContent: content,
+    publishedAt,
+    fingerprint: fingerprintFor(provider, sourceUrl, content),
+  };
 }
 
 function assertAllowedSourceUrl(sourceUrl: string): void {
@@ -101,6 +136,82 @@ export function candidatesFromHtml(provider: ProviderId, label: string, sourceUr
   return results;
 }
 
+export interface KimiPlatformModel {
+  sourceUrl: string;
+  label: string;
+}
+
+/**
+ * The Kimi API Platform home page lists currently supported models. Discover
+ * the guide URLs there rather than hard-coding K3/K2.x model identifiers.
+ */
+export function kimiPlatformModelsFromHtml(indexUrl: string, html: string): KimiPlatformModel[] {
+  const $ = cheerio.load(html);
+  $("script, style, nav, footer").remove();
+  const models = new Map<string, KimiPlatformModel>();
+  for (const link of $("a[href]").toArray()) {
+    const text = normalize($(link).text());
+    const href = $(link).attr("href")!;
+    if (!href.startsWith("/docs/guide/kimi-k")) continue;
+    if (!KIMI_MODEL_PATTERN.test(text)) continue;
+    const sourceUrl = new URL($(link).attr("href")!, indexUrl).toString();
+    assertAllowedSourceUrl(sourceUrl);
+    const label = text.match(/Kimi\s+K\d+(?:\.\d+)?(?:\s+Code)?/i)?.[0] ?? text;
+    models.set(sourceUrl, { sourceUrl, label });
+  }
+  return [...models.values()];
+}
+
+export function candidateFromKimiPlatformGuide(
+  model: KimiPlatformModel,
+  html: string,
+  collectedAt: string,
+  sourceOrder = 0,
+): ReleaseCandidate {
+  const $ = cheerio.load(html);
+  $("script, style, nav, header, footer").remove();
+  const main = $("main").first().get(0);
+  if (!main) throw new Error(`Kimi model guide has no main content: ${model.sourceUrl}`);
+  const content = elementText($, main);
+  if (content.length < 80) throw new Error(`Kimi model guide has insufficient content: ${model.sourceUrl}`);
+  const rawContent = `Kimi API Platform\nModel: ${model.label}\n${content}`.slice(0, 12_000);
+  return {
+    provider: "kimi",
+    sourceUrl: model.sourceUrl,
+    sourceTitle: `Kimi API Platform · ${model.label}`,
+    sourceExcerpt: rawContent.slice(0, 6_000),
+    rawContent,
+    // The platform catalog has no per-model release timestamp. Record when
+    // MPM first observed this official guide, as with OpenAI Model Guidance.
+    publishedAt: collectedAt,
+    sourceOrder,
+    fingerprint: fingerprintFor("kimi", model.sourceUrl, rawContent),
+  };
+}
+
+/**
+ * 智谱的更新页使用 update-container cards rather than heading sections. The
+ * card's title and body are kept together so a dated model launch remains one
+ * release, while plans and other non-model products are ignored.
+ */
+export function candidatesFromZhipuNewReleasesHtml(sourceUrl: string, html: string): ReleaseCandidate[] {
+  const $ = cheerio.load(html);
+  $("script, style, nav, footer").remove();
+  const results: ReleaseCandidate[] = [];
+
+  for (const card of $(".update-container").toArray()) {
+    const date = normalize($(card).find('[data-component-part="update-label"]').first().text());
+    const title = normalize($(card).find('[data-component-part="update-description"]').first().text());
+    const body = normalize($(card).find('[data-component-part="update-content"]').first().text());
+    const rawContent = `${date}\n${title}\n${body}`;
+    if (!ZHIPU_MODEL_PATTERN.test(rawContent)) continue;
+    const candidate = candidateFromReleaseContent("zhipu", "智谱 GLM 新品发布", sourceUrl, title || date, rawContent);
+    if (candidate) results.push(candidate);
+  }
+
+  return results;
+}
+
 export function candidateFromOpenAiModelGuide(
   model: string,
   label: string,
@@ -148,6 +259,7 @@ async function mapWithConcurrency<T, R>(items: T[], maximum: number, worker: (it
 export class OpenAiModelGuidanceProvider implements SourceProvider {
   readonly id = "openai" as const;
   readonly label = "OpenAI Model Guidance";
+  readonly displayLabel = "OpenAI";
   readonly sourceUrl = "https://developers.openai.com/api/docs/guides/latest-model";
 
   constructor() {
@@ -185,6 +297,7 @@ export class HtmlReleaseNotesProvider implements SourceProvider {
     readonly label: string,
     readonly sourceUrl: string,
     private readonly maxItems = 3,
+    readonly displayLabel = label,
   ) {
     assertAllowedSourceUrl(sourceUrl);
   }
@@ -204,10 +317,61 @@ export class HtmlReleaseNotesProvider implements SourceProvider {
   }
 }
 
+export class KimiPlatformProvider implements SourceProvider {
+  readonly id = "kimi" as const;
+  readonly label = "Kimi API Platform";
+  readonly displayLabel = "Kimi";
+  readonly sourceUrl = "https://platform.kimi.com/";
+
+  constructor(private readonly maxItems = 3) {
+    assertAllowedSourceUrl(this.sourceUrl);
+  }
+
+  async fetchUpdates(): Promise<ReleaseCandidate[]> {
+    const indexResponse = await fetch(this.sourceUrl, {
+      headers: { "User-Agent": "MPM/0.1 (+official Kimi model-platform monitor)", Accept: "text/html,application/xhtml+xml" },
+    });
+    if (!indexResponse.ok) throw new Error(`${this.label} source returned HTTP ${indexResponse.status}`);
+    const models = kimiPlatformModelsFromHtml(this.sourceUrl, await indexResponse.text()).slice(0, this.maxItems);
+    if (models.length === 0) throw new Error(`${this.label} page exposed no current model guides`);
+    const collectedAt = new Date().toISOString();
+    return mapWithConcurrency(models, 3, async (model, sourceOrder) => {
+      const response = await fetch(model.sourceUrl, {
+        headers: { "User-Agent": "MPM/0.1 (+official Kimi model-platform monitor)", Accept: "text/html,application/xhtml+xml" },
+      });
+      if (!response.ok) throw new Error(`${this.label} ${model.label} returned HTTP ${response.status}`);
+      return candidateFromKimiPlatformGuide(model, await response.text(), collectedAt, sourceOrder);
+    });
+  }
+}
+
+export class ZhipuNewReleasesProvider implements SourceProvider {
+  readonly id = "zhipu" as const;
+  readonly label = "智谱 GLM 新品发布";
+  readonly displayLabel = "智谱 GLM";
+  readonly sourceUrl = "https://docs.bigmodel.cn/cn/update/new-releases";
+
+  constructor(private readonly maxItems = 3) {
+    assertAllowedSourceUrl(this.sourceUrl);
+  }
+
+  async fetchUpdates(): Promise<ReleaseCandidate[]> {
+    const response = await fetch(this.sourceUrl, {
+      headers: { "User-Agent": "MPM/0.1 (+official Zhipu model-release monitor)", Accept: "text/html,application/xhtml+xml" },
+    });
+    if (!response.ok) throw new Error(`${this.label} source returned HTTP ${response.status}`);
+    const releases = candidatesFromZhipuNewReleasesHtml(this.sourceUrl, await response.text());
+    if (releases.length === 0) throw new Error(`${this.label} parser found no model-release cards`);
+    return releases.slice(0, this.maxItems);
+  }
+}
+
 export function defaultSources(): SourceProvider[] {
   return [
     new OpenAiModelGuidanceProvider(),
-    new HtmlReleaseNotesProvider("anthropic", "Anthropic Platform Release Notes", "https://platform.claude.com/docs/en/release-notes/overview"),
+    new HtmlReleaseNotesProvider("anthropic", "Anthropic Platform Release Notes", "https://platform.claude.com/docs/en/release-notes/overview", 3, "Anthropic"),
+    new KimiPlatformProvider(),
+    new ZhipuNewReleasesProvider(),
   ];
 }
 

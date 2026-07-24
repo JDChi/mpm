@@ -18,6 +18,15 @@ export interface ArticleFilters {
   opportunityTag?: string;
 }
 
+export interface ProviderOption {
+  id: string;
+  label: string;
+}
+
+export function listProviders(): Promise<ProviderOption[]> {
+  return request("/providers");
+}
+
 export function listArticles(filters: ArticleFilters = {}): Promise<ArticleSummary[]> {
   const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => Boolean(value)) as [string, string][]);
   return request(`/articles${query.size ? `?${query}` : ""}`);

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { HtmlReleaseNotesProvider, candidateFromOpenAiModelGuide, candidatesFromHtml, openAiModelGuideTabsFromHtml } from "../src/sources.js";
+import {
+  HtmlReleaseNotesProvider,
+  candidateFromKimiPlatformGuide,
+  candidateFromOpenAiModelGuide,
+  candidatesFromHtml,
+  candidatesFromZhipuNewReleasesHtml,
+  defaultSources,
+  kimiPlatformModelsFromHtml,
+  openAiModelGuideTabsFromHtml,
+} from "../src/sources.js";
 
 describe("official model sources", () => {
   it("only emits dated sections that name a model or version", () => {
@@ -50,6 +59,39 @@ describe("official model sources", () => {
 
   it("rejects a source outside the official allowlist", () => {
     expect(() => new HtmlReleaseNotesProvider("openai", "Third party", "https://example.com/models")).toThrow("Unapproved official source host");
+  });
+
+  it("discovers current Kimi model guides from the official platform, including K3", () => {
+    const models = kimiPlatformModelsFromHtml("https://platform.kimi.com/", `
+      <main>
+        <a href="/docs/guide/kimi-k3-quickstart">K3 Kimi K3 是旗舰模型</a>
+        <a href="/docs/guide/kimi-k2-7-code-quickstart">K2.7 Code Kimi K2.7 Code 是编程模型</a>
+        <a href="/docs/guide/kimi-k2-6-quickstart">K2.6 Kimi K2.6 是通用模型</a>
+        <a href="/docs/guide/quickstart">使用手册</a>
+      </main>
+    `);
+
+    expect(models.map((model) => model.label)).toEqual(["Kimi K3", "Kimi K2.7 Code", "Kimi K2.6"]);
+    const candidate = candidateFromKimiPlatformGuide(models[0]!, `<main><h1>Kimi K3</h1><p>支持 1M 上下文、原生视觉与长程编程任务，可在大型代码库、知识工作和复杂推理场景中持续执行任务。</p><p>支持推理强度、工具调用与结构化输出，并通过上下文缓存降低长对话成本。</p></main>`, "2026-07-24T08:00:00.000Z", 0);
+    expect(candidate).toMatchObject({ provider: "kimi", sourceTitle: "Kimi API Platform · Kimi K3", sourceOrder: 0 });
+    expect(candidate.rawContent).toContain("1M 上下文");
+  });
+
+  it("keeps only 智谱 model update cards and parses ISO dates", () => {
+    const candidates = candidatesFromZhipuNewReleasesHtml("https://docs.bigmodel.cn/cn/update/new-releases", `
+      <main>
+        <div class="update-container"><button data-component-part="update-label">2026-06-16</button><div data-component-part="update-description">GLM-5.2 新一代旗舰模型上线</div><div data-component-part="update-content"><strong>GLM-5.2</strong><ul><li>支持 1M 上下文</li></ul></div></div>
+        <div class="update-container"><button data-component-part="update-label">2026-05-29</button><div data-component-part="update-description">GLM Coding Plan 团队版上线</div><div data-component-part="update-content"><p>团队订阅与预算管理</p></div></div>
+      </main>
+    `);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: "zhipu", publishedAt: "2026-06-16T12:00:00.000Z" });
+    expect(candidates[0]?.sourceTitle).toContain("GLM-5.2");
+  });
+
+  it("registers the four official model providers", () => {
+    expect(defaultSources().map((source) => source.id)).toEqual(["openai", "anthropic", "kimi", "zhipu"]);
   });
 
 });

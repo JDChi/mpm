@@ -3,17 +3,23 @@ import type { ReleaseRepository } from "./repository.js";
 import type { SourceProvider } from "./sources.js";
 import type { RunSummary } from "@mpm/contracts";
 
+export interface CollectionOptions {
+  /** Limits both collection and analysis to one configured provider. */
+  provider?: string;
+}
+
 export async function runCollection(
   database: ReleaseRepository,
   sources: SourceProvider[],
   analyzer: Analyzer,
+  options: CollectionOptions = {},
 ): Promise<RunSummary> {
   const id = await database.startRun();
   let discoveredCount = 0;
   let publishedCount = 0;
   const errors: string[] = [];
 
-  for (const source of sources) {
+  for (const source of sources.filter((source) => !options.provider || source.id === options.provider)) {
     try {
       const candidates = await source.fetchUpdates();
       discoveredCount += candidates.length;
@@ -28,7 +34,7 @@ export async function runCollection(
 
   const attemptedReleaseIds = new Set<number>();
   for (;;) {
-    const release = await database.claimNextRelease([...attemptedReleaseIds]);
+    const release = await database.claimNextRelease([...attemptedReleaseIds], options.provider);
     if (!release) break;
     attemptedReleaseIds.add(release.id);
     try {

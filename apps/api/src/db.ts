@@ -18,6 +18,21 @@ type Row = Record<string, unknown>;
 
 export type { ArticleFilters, ReleaseRepository, ReleaseStatus, StoredRelease } from "./repository.js";
 
+export interface PublishedReleaseForSync {
+  release: StoredRelease & { collectedAt: string; sourceOrder: number };
+  article: {
+    slug: string;
+    title: string;
+    summary: string;
+    modelsJson: string;
+    releaseKind: string;
+    capabilityTagsJson: string;
+    opportunityTagsJson: string;
+    analysisJson: string;
+    createdAt: string;
+  };
+}
+
 function parseJsonArray<T extends string>(value: unknown): T[] {
   try {
     const parsed = JSON.parse(String(value));
@@ -131,14 +146,16 @@ export class RadarDatabase implements ReleaseRepository {
     );
   }
 
-  async claimNextRelease(excludedIds: number[] = []): Promise<StoredRelease | null> {
+  async claimNextRelease(excludedIds: number[] = [], provider?: string): Promise<StoredRelease | null> {
     const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString();
+    const providerFilter = provider ? "AND provider = ?" : "";
     const exclusions = excludedIds.length ? `AND id NOT IN (${excludedIds.map(() => "?").join(", ")})` : "";
     const row = this.sqlite.prepare(`SELECT * FROM releases
       WHERE (status IN ('pending', 'retryable_failed')
         OR (status = 'analyzing' AND analysis_started_at < ?))
+      ${providerFilter}
       ${exclusions}
-      ORDER BY published_at ASC, id ASC LIMIT 1`).get(staleBefore, ...excludedIds) as Row | undefined;
+      ORDER BY published_at ASC, id ASC LIMIT 1`).get(staleBefore, ...(provider ? [provider] : []), ...excludedIds) as Row | undefined;
     if (!row) return null;
     const update = this.sqlite.prepare(`UPDATE releases
       SET status = 'analyzing', analysis_attempts = analysis_attempts + 1,
@@ -207,6 +224,29 @@ export class RadarDatabase implements ReleaseRepository {
       a.opportunity_tags_json, a.analysis_json, a.created_at, r.provider, r.published_at, r.collected_at, r.source_url,
       r.source_title, r.source_excerpt FROM articles a JOIN releases r ON a.release_id = r.id WHERE a.slug = ?`).get(slug) as Row | undefined;
     return row ? this.articleFromRow(row, true) as ArticleDetail : null;
+  }
+
+  /** Local-only export for the reviewed, idempotent D1 bootstrap command. */
+  listPublishedForSync(provider: string): PublishedReleaseForSync[] {
+    const rows = this.sqlite.prepare(`SELECT r.*, a.slug, a.title, a.summary, a.models_json, a.release_kind,
+      a.capability_tags_json, a.opportunity_tags_json, a.analysis_json, a.created_at
+      FROM releases r JOIN articles a ON a.release_id = r.id
+      WHERE r.provider = ? AND r.status = 'published'
+      ORDER BY r.published_at DESC, r.source_order ASC, a.id DESC`).all(provider) as Row[];
+    return rows.map((row) => ({
+      release: {
+        id: Number(row.id), provider: String(row.provider) as ProviderId, sourceUrl: String(row.source_url),
+        sourceTitle: String(row.source_title), sourceExcerpt: String(row.source_excerpt), rawContent: String(row.raw_content),
+        publishedAt: String(row.published_at), fingerprint: String(row.fingerprint), collectedAt: String(row.collected_at),
+        sourceOrder: Number(row.source_order), status: String(row.status) as ReleaseStatus,
+        analysisAttempts: Number(row.analysis_attempts), lastAnalysisError: row.last_analysis_error ? String(row.last_analysis_error) : null,
+      },
+      article: {
+        slug: String(row.slug), title: String(row.title), summary: String(row.summary), modelsJson: String(row.models_json),
+        releaseKind: String(row.release_kind), capabilityTagsJson: String(row.capability_tags_json),
+        opportunityTagsJson: String(row.opportunity_tags_json), analysisJson: String(row.analysis_json), createdAt: String(row.created_at),
+      },
+    }));
   }
 
   private articleFromRow(row: Row, detail: boolean): ArticleSummary | ArticleDetail {

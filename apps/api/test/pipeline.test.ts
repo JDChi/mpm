@@ -58,6 +58,19 @@ describe("collection pipeline", () => {
     expect(await db.listArticles()).toHaveLength(1);
   });
 
+  it("scopes a local provider run so it does not claim another provider's release", async () => {
+    const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "provider-scope.sqlite"));
+    const zhipuCandidate = makeCandidate({ ...candidate, provider: "zhipu", sourceUrl: "https://official.example/glm-5.2" });
+    const zhipuId = await db.insertRelease(zhipuCandidate);
+    const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };
+
+    const result = await runCollection(db, [source], { analyze: async () => analysis }, { provider: "openai" });
+
+    expect(result.publishedCount).toBe(1);
+    expect((await db.getRelease(zhipuId!))?.status).toBe("pending");
+    expect(await db.listArticles()).toHaveLength(1);
+  });
+
   it("only returns an article when all requested classifications match", async () => {
     const db = new RadarDatabase(join(mkdtempSync(join(tmpdir(), "mpm-")), "filters.sqlite"));
     const source: SourceProvider = { id: "openai", label: "OpenAI", fetchUpdates: async () => [candidate] };

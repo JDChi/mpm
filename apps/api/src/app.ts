@@ -23,7 +23,7 @@ export function createApp(deps: AppDependencies): Hono {
   }));
 
   app.get("/api/health", (c) => c.json({ ok: true }));
-  app.get("/api/providers", (c) => c.json(deps.sources.map(({ id, label }) => ({ id, label }))));
+  app.get("/api/providers", (c) => c.json(deps.sources.map(({ id, label, displayLabel }) => ({ id, label: displayLabel ?? label }))));
   app.get("/api/articles", async (c) => c.json(await deps.database.listArticles({
     provider: c.req.query("provider"),
     model: c.req.query("model"),

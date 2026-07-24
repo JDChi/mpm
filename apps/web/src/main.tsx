@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ArticleDetail, ArticleSummary, RunSummary } from "@mpm/contracts";
-import { getArticle, listArticles, listRuns, startRun } from "./api";
+import { getArticle, listArticles, listProviders, listRuns, startRun, type ProviderOption } from "./api";
 import "./styles.css";
 
 const capabilityLabels: Record<string, string> = { reasoning: "推理", tool_use: "工具调用", context: "上下文", multimodal: "多模态", coding: "编程", speed_cost: "速度与成本", reliability: "可靠性", safety: "安全" };
 const opportunityLabels: Record<string, string> = { agent: "Agent", rag: "RAG", developer_tools: "开发工具", automation: "流程自动化", customer_support: "客服", content_creation: "内容生成", data_analysis: "数据分析" };
 const releaseKindLabels: Record<string, string> = { new_model: "新模型", model_update: "版本更新", model_capability: "专属能力", model_deprecation: "弃用 / 退役" };
+const providerLabels: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", kimi: "Kimi", zhipu: "智谱 GLM" };
 
 type Route = { name: "home" } | { name: "article"; slug: string } | { name: "admin" };
 
@@ -27,23 +28,27 @@ function Header() {
 
 function ArticleCard({ article }: { article: ArticleSummary }) {
   return <a className="article-card" href={`#/articles/${encodeURIComponent(article.slug)}`}>
-    <div className="eyebrow"><span>{article.provider}</span><time>{date(article.publishedAt)}</time></div>
+    <div className="eyebrow"><span>{providerLabels[article.provider] ?? article.provider}</span><time>{date(article.publishedAt)}</time></div>
     <h2>{article.title}</h2><p>{article.summary}</p><div className="article-tags"><span className="tag kind">{releaseKindLabels[article.releaseKind]}</span>{article.models.map((item) => <span className="tag model" key={item}>{item}</span>)}</div><span className="read-more">阅读推演 →</span>
   </a>;
 }
 
 function Home() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [provider, setProvider] = useState("all");
   const [model, setModel] = useState("all");
   const [error, setError] = useState("");
   const models = useMemo(() => [...new Set(articles.flatMap((article) => article.models))].sort(), [articles]);
   const displayed = useMemo(() => articles.filter((item) => (provider === "all" || item.provider === provider)
     && (model === "all" || item.models.includes(model))), [articles, provider, model]);
-  useEffect(() => { listArticles().then(setArticles).catch((err: Error) => setError(err.message)); }, []);
+  useEffect(() => {
+    listArticles().then(setArticles).catch((err: Error) => setError(err.message));
+    listProviders().then(setProviders).catch(() => undefined);
+  }, []);
   return <main>
     <section className="hero"><p className="kicker">MPM · MODEL TO PRODUCT MANAGER</p><h1>把模型变化，<br /><i>变成产品判断。</i></h1><p>追踪官方模型更新，翻译成用户体验、产品策略与 AI 应用机会。事实来自原文，判断保留边界。</p></section>
-    <section className="feed"><div className="feed-top"><h2>最新更新</h2><div className="filters">{["all", "openai", "anthropic"].map((item) => <button className={provider === item ? "active" : ""} onClick={() => setProvider(item)} key={item}>{item === "all" ? "全部" : item}</button>)}</div></div><div className="select-filters"><label>模型<select value={model} onChange={(event) => setModel(event.target.value)}><option value="all">全部模型</option>{models.map((item) => <option key={item}>{item}</option>)}</select></label></div>
+    <section className="feed"><div className="feed-top"><h2>最新更新</h2><div className="filters">{[{ id: "all", label: "全部" }, ...providers].map((item) => <button className={provider === item.id ? "active" : ""} onClick={() => setProvider(item.id)} key={item.id}>{item.label}</button>)}</div></div><div className="select-filters"><label>模型<select value={model} onChange={(event) => setModel(event.target.value)}><option value="all">全部模型</option>{models.map((item) => <option key={item}>{item}</option>)}</select></label></div>
       {error && <p className="error">{error}</p>}
       {!error && displayed.length === 0 && <div className="empty"><strong>还没有文章。</strong><span>到「管理」页运行首次抓取，模型更新会在通过校验后自动公开。</span></div>}
       <div className="grid">{displayed.map((article) => <ArticleCard key={article.slug} article={article} />)}</div>
@@ -57,7 +62,7 @@ function Article({ slug }: { slug: string }) {
   useEffect(() => { getArticle(slug).then(setArticle).catch((err: Error) => setError(err.message)); }, [slug]);
   if (error) return <main className="detail"><p className="error">{error}</p><a href="#/">返回首页</a></main>;
   if (!article) return <main className="detail">加载中…</main>;
-  return <main className="detail"><a className="back" href="#/">← 全部更新</a><p className="kicker">{article.provider} · {date(article.publishedAt)}</p><h1>{article.title}</h1><p className="lede">{article.summary}</p><div className="article-tags detail-tags"><span className="tag kind">{releaseKindLabels[article.releaseKind]}</span>{article.models.map((item) => <span className="tag model" key={item}>{item}</span>)}{article.capabilityTags.map((item) => <span className="tag" key={item}>{capabilityLabels[item]}</span>)}{article.opportunityTags.map((item) => <span className="tag" key={item}>{opportunityLabels[item]}</span>)}</div>
+  return <main className="detail"><a className="back" href="#/">← 全部更新</a><p className="kicker">{providerLabels[article.provider] ?? article.provider} · {date(article.publishedAt)}</p><h1>{article.title}</h1><p className="lede">{article.summary}</p><div className="article-tags detail-tags"><span className="tag kind">{releaseKindLabels[article.releaseKind]}</span>{article.models.map((item) => <span className="tag model" key={item}>{item}</span>)}{article.capabilityTags.map((item) => <span className="tag" key={item}>{capabilityLabels[item]}</span>)}{article.opportunityTags.map((item) => <span className="tag" key={item}>{opportunityLabels[item]}</span>)}</div>
     <section><a className="source-link" href={article.sourceUrl} target="_blank" rel="noreferrer">查看官方原文 ↗</a></section>
     <section><h2>变化要点</h2><ul>{article.analysis.keyChanges.map((item) => <li key={item}>{item}</li>)}</ul></section>
     <section className="inference"><p className="kicker">产品判断 · 非官方承诺</p><h2>可能带来的应用功能</h2>{article.analysis.potentialFeatures.map((feature) => <article className="feature" key={feature.name}><div><h3>{feature.name}</h3><span className={`confidence ${feature.confidence}`}>{feature.confidence} confidence</span></div><p><b>使用场景：</b>{feature.scenario}</p><p><b>判断依据：</b>{feature.rationale}</p><p><b>实现前提：</b>{feature.prerequisites.join("、")}</p></article>)}</section>

@@ -28,7 +28,7 @@ export interface ReleaseRepository {
   listRuns(): Promise<RunSummary[]>;
   insertRelease(candidate: ReleaseCandidate): Promise<number | null>;
   syncReleaseSourceOrder(candidate: ReleaseCandidate): Promise<void>;
-  claimNextRelease(excludedIds?: number[]): Promise<StoredRelease | null>;
+  claimNextRelease(excludedIds?: number[], provider?: string): Promise<StoredRelease | null>;
   getRelease(id: number): Promise<StoredRelease | null>;
   markReleaseRetryableFailed(id: number, error: string): Promise<void>;
   publishArticle(release: StoredRelease, analysis: AnalysisResult): Promise<ArticleDetail>;

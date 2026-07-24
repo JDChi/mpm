@@ -5,6 +5,8 @@
   "scripts": {
     "dev:api": "pnpm --filter @mpm/api dev",
     "dev:web": "pnpm --filter @mpm/web dev",
+    "radar:run": "pnpm --filter @mpm/api radar:run",
+    "radar:sync-d1": "pnpm --filter @mpm/api radar:sync-d1",
     "build": "pnpm --filter @mpm/contracts build && pnpm --filter @mpm/api build && pnpm --filter @mpm/web build",
     "test": "pnpm --filter @mpm/api test",
     "build:cf": "pnpm --filter @mpm/contracts build && pnpm --filter @mpm/web build && pnpm --filter @mpm/worker typecheck",
