@@ -17,7 +17,16 @@ export interface AppDependencies {
 export function createApp(deps: AppDependencies): Hono {
   const app = new Hono();
   app.use("/api/*", cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    // Vite may choose a different local port when an existing preview is
+    // running. Keep development flexible without allowing arbitrary origins.
+    origin: (origin) => {
+      try {
+        const url = new URL(origin);
+        return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1") ? origin : "";
+      } catch {
+        return "";
+      }
+    },
     allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["GET", "POST"],
   }));

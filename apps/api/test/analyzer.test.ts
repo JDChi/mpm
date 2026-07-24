@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateAnalysis } from "../src/analyzer.js";
+import { parseAnalysisPayload, validateAnalysis } from "../src/analyzer.js";
 
 describe("analysis normalization", () => {
   it("accepts Chinese field names returned by MiniMax before applying the strict schema", () => {
@@ -65,5 +65,14 @@ describe("analysis normalization", () => {
     expect(analysis.keyChanges).toEqual(["官方说明了模型能力变化。"]);
     expect(analysis.caveats).toEqual(["这是产品推演，并非官方承诺。"]);
     expect(analysis.potentialFeatures).toHaveLength(1);
+  });
+
+  it("accepts a valid JSON final response when MiniMax omits the submission tool call", () => {
+    const analysis = validateAnalysis(parseAnalysisPayload(`\`\`\`json
+      {"title":"K2.7 Code 的产品机会","summary":"更适合长程代码任务。","models":["Kimi K2.7 Code"],"releaseKind":"new_model","capabilityTags":["coding"],"opportunityTags":["developer_tools"],"keyChanges":["官方发布模型。"],"potentialFeatures":[{"name":"代码助手","scenario":"复杂项目","rationale":"长程任务能力提升。","prerequisites":["评测"],"confidence":"medium"}],"caveats":["不是官方承诺。"]}
+    \`\`\``));
+
+    expect(analysis.models).toEqual(["Kimi K2.7 Code"]);
+    expect(analysis.title).toContain("K2.7 Code");
   });
 });

@@ -108,12 +108,13 @@ function normalizeAnalysis(value: unknown): unknown {
   return analysis;
 }
 
-function parseSubmittedAnalysis(input: unknown): unknown {
+export function parseAnalysisPayload(input: unknown): unknown {
   if (typeof input !== "string") return input;
+  const payload = input.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? input;
   try {
-    return JSON.parse(input);
+    return JSON.parse(payload);
   } catch {
-    return JSON.parse(jsonrepair(input));
+    return JSON.parse(jsonrepair(payload));
   }
 }
 
@@ -173,10 +174,17 @@ export class AiSdkAnalyzer implements Analyzer {
         const sourceCallIndex = calls.findIndex((call) => call.toolName === "read_current_official_release");
         const finalCall = calls.find((call) => call.toolName === "submit_analysis");
         if (sourceCallIndex === -1) throw new Error("Model did not read the official release through the required tool");
-        if (!finalCall) throw new Error("Model did not submit a structured analysis");
-        if (calls.indexOf(finalCall) < sourceCallIndex) throw new Error("Model submitted analysis before reading the official release");
-        const submitted = submissionSchema.parse(finalCall.input);
-        return validateAnalysis(parseSubmittedAnalysis(submitted.analysis));
+        if (finalCall) {
+          if (calls.indexOf(finalCall) < sourceCallIndex) throw new Error("Model submitted analysis before reading the official release");
+          const submitted = submissionSchema.parse(finalCall.input);
+          return validateAnalysis(parseAnalysisPayload(submitted.analysis));
+        }
+        // MiniMax occasionally returns the requested JSON as its final text
+        // instead of making the optional submission tool call. The model has
+        // still read the only allowed release through the required tool, so
+        // accept that equivalent structured result after the same validation.
+        if (result.text.trim()) return validateAnalysis(parseAnalysisPayload(result.text));
+        throw new Error("Model did not submit a structured analysis");
       } catch (error) {
         lastError = error;
       }
